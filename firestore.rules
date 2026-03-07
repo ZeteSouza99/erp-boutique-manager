@@ -1,0 +1,256 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // ==========================================
+    // FUNÇÕES AUXILIARES
+    // ==========================================
+    
+    // Verifica se o usuário está autenticado
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Verifica se o usuário é o proprietário do recurso
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    // Obtém os dados do usuário atual
+    function getUserData() {
+      return get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data;
+    }
+    
+    // Verifica se o usuário tem um perfil específico
+    function hasRole(role) {
+      return isAuthenticated() && getUserData().perfil == role;
+    }
+    
+    // Verifica se o usuário tem um dos perfis especificados
+    function hasAnyRole(roles) {
+      return isAuthenticated() && getUserData().perfil in roles;
+    }
+    
+    // Verifica se é admin
+    function isAdmin() {
+      return hasRole('admin');
+    }
+    
+    // Verifica se é admin ou gerente
+    function isAdminOrGerente() {
+      return hasAnyRole(['admin', 'gerente']);
+    }
+    
+    // Verifica se é qualquer funcionário autenticado
+    function isStaff() {
+      return hasAnyRole(['admin', 'gerente', 'vendedor']);
+    }
+
+    // Verifica se o campo é uma string válida (não vazia)
+    function isValidString(field) {
+      return field is string && field.size() > 0;
+    }
+
+    // Verifica se o campo é um número positivo
+    function isPositiveNumber(field) {
+      return field is number && field > 0;
+    }
+
+    // Verifica se o campo é um número não negativo
+    function isNonNegativeNumber(field) {
+      return field is number && field >= 0;
+    }
+    
+    // ==========================================
+    // USUÁRIOS
+    // ==========================================
+    
+    match /usuarios/{userId} {
+      // Qualquer autenticado pode ler usuários (para exibir nomes)
+      allow read: if isAuthenticated();
+      
+      // Somente admin pode criar/deletar usuários
+      allow create: if isAdmin();
+      allow delete: if isAdmin();
+      
+      // Usuário pode atualizar próprio perfil (mas não o campo perfil), admin pode atualizar qualquer um
+      allow update: if isAdmin() || (isOwner(userId) && !('perfil' in request.resource.data) || request.resource.data.perfil == resource.data.perfil);
+    }
+    
+    // ==========================================
+    // PRODUTOS E VARIAÇÕES
+    // ==========================================
+    
+    match /produtos/{produtoId} {
+      // Qualquer funcionário pode ler produtos
+      allow read: if isStaff();
+      
+      // Admin e gerente podem criar/atualizar/deletar
+      allow create, update: if isAdminOrGerente()
+        && isValidString(request.resource.data.nome)
+        && isPositiveNumber(request.resource.data.precoVenda);
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // CATEGORIAS, MARCAS, FORNECEDORES
+    // ==========================================
+    
+    match /categorias/{categoriaId} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOrGerente();
+      allow delete: if isAdmin();
+    }
+    
+    match /marcas/{marcaId} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOrGerente();
+      allow delete: if isAdmin();
+    }
+    
+    match /fornecedores/{fornecedorId} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOrGerente();
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // CLIENTES
+    // ==========================================
+    
+    match /clientes/{clienteId} {
+      // Qualquer funcionário pode ler e criar clientes
+      allow read: if isStaff();
+      allow create: if isStaff()
+        && isValidString(request.resource.data.nome);
+
+      // Admin e gerente podem atualizar/deletar
+      allow update: if isStaff();
+      allow delete: if isAdminOrGerente();
+    }
+    
+    match /creditosCliente/{creditoId} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOrGerente();
+    }
+    
+    // ==========================================
+    // VENDAS
+    // ==========================================
+    
+    match /vendas/{vendaId} {
+      // Qualquer funcionário pode ler vendas
+      allow read: if isStaff();
+      
+      // Qualquer funcionário pode criar vendas
+      allow create: if isStaff()
+        && isPositiveNumber(request.resource.data.total)
+        && request.resource.data.status in ['finalizada', 'cancelada'];
+      
+      // Somente admin/gerente podem atualizar (cancelar, etc)
+      allow update: if isAdminOrGerente();
+      
+      // Vendas não podem ser deletadas
+      allow delete: if false;
+    }
+    
+    match /vendaItens/{itemId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isAdminOrGerente();
+    }
+    
+    match /pagamentos/{pagamentoId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isAdminOrGerente();
+    }
+    
+    // ==========================================
+    // CAIXA
+    // ==========================================
+    
+    match /caixas/{caixaId} {
+      // Qualquer funcionário pode ler caixas
+      allow read: if isStaff();
+      
+      // Qualquer funcionário pode abrir caixa
+      allow create: if isStaff()
+        && isNonNegativeNumber(request.resource.data.saldoInicial);
+      
+      // Somente o próprio usuário ou admin/gerente pode fechar
+      allow update: if isStaff();
+      
+      // Caixas não podem ser deletados
+      allow delete: if false;
+    }
+    
+    match /caixaMovimentos/{movimentoId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update, delete: if isAdminOrGerente();
+    }
+    
+    // ==========================================
+    // ESTOQUE
+    // ==========================================
+    
+    match /estoqueMovimentos/{movimentoId} {
+      allow read: if isStaff();
+      allow create: if isStaff();
+      allow update: if isAdminOrGerente();
+      allow delete: if false; // Movimentos não podem ser deletados
+    }
+    
+    // ==========================================
+    // TROCAS E DEVOLUÇÕES
+    // ==========================================
+    
+    match /trocas/{trocaId} {
+      allow read: if isStaff();
+      allow create: if isAdminOrGerente();
+      allow update: if isAdminOrGerente();
+      allow delete: if false;
+    }
+    
+    match /trocaItens/{itemId} {
+      allow read: if isStaff();
+      allow create, update: if isAdminOrGerente();
+    }
+    
+    // ==========================================
+    // DESPESAS
+    // ==========================================
+    
+    match /despesas/{despesaId} {
+      allow read: if isAdminOrGerente();
+      allow create, update: if isAdminOrGerente();
+      allow delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // CONFIGURAÇÕES
+    // ==========================================
+    
+    match /configuracoes/{configId} {
+      allow read: if isStaff();
+      allow create, update, delete: if isAdmin();
+    }
+    
+    // ==========================================
+    // LOGS DE AUDITORIA
+    // ==========================================
+    
+    match /logsAuditoria/{logId} {
+      // Somente admin pode ler logs
+      allow read: if isAdmin();
+      
+      // Sistema pode criar logs (qualquer funcionário autenticado)
+      allow create: if isStaff();
+      
+      // Logs não podem ser alterados ou deletados
+      allow update, delete: if false;
+    }
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "name": "Boutique Manager",
+  "short_name": "Boutique",
+  "description": "Sistema de gestão para lojas de roupas",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e293b",
+  "theme_color": "#3b82f6"
+}

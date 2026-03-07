@@ -1,0 +1,52 @@
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    // Função para verificar autenticação
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    // Verifica tamanho máximo do arquivo (5MB)
+    function isValidSize() {
+      return request.resource.size < 5 * 1024 * 1024;
+    }
+    
+    // Verifica se é uma imagem
+    function isImage() {
+      return request.resource.contentType.matches('image/.*');
+    }
+    
+    // Fotos de produtos
+    match /produtos/{produtoId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Fotos de categorias
+    match /categorias/{categoriaId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isImage() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Comprovantes de despesas
+    match /despesas/{despesaId}/{fileName} {
+      allow read: if isAuthenticated();
+      allow write: if isAuthenticated() && isValidSize();
+      allow delete: if isAuthenticated();
+    }
+    
+    // Logo da empresa
+    match /config/logo/{fileName} {
+      allow read: if true; // Logo pode ser público
+      allow write: if isAuthenticated() && isImage() && isValidSize();
+    }
+    
+    // Backups (somente admin via Cloud Functions)
+    match /backups/{fileName} {
+      allow read, write: if false; // Acesso apenas por Cloud Functions
+    }
+  }
+}
